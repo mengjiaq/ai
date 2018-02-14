@@ -138,7 +138,7 @@
 
 (define (manhattan-distance a b) ;; manhattan distance from a to b
   (+ (abs (- (first (pos a)) (first (pos b))))
-     (abs (- (first (pos a)) (first (pos b))))))
+     (abs (- (second (pos a)) (second (pos b))))))
 
 (define (heuristic a goals) ;; heuristics: minimum manhattan distance to any goal
   (if (empty? goals) +inf.0
