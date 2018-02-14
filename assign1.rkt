@@ -1,9 +1,7 @@
 ;; The first three lines of this file were inserted by DrRacket. They record metadata
 ;; about the language level of this file in a form that our tools can easily process.
 #reader(lib "htdp-intermediate-lambda-reader.ss" "lang")((modname assign1) (read-case-sensitive #t) (teachpacks ()) (htdp-settings #(#t constructor repeating-decimal #f #t none #f () #f)))
-
 (require graph)
-(require racket/dict)
 (define g (weighted-graph/directed '((6 ts mail)
                                      (6 mail ts)
                                      (8 o103 ts) (8 ts o103)
@@ -32,9 +30,15 @@
       (equal? v 'storage)
       (equal? v 'd1)))
 (define goals (list 'r123 'storage 'd1))
-  
+
+;; helper function: add addon to all element in list of list
+;; Datatype:
+;;   addon: node
+;;   lst: list of list of node
+;; return : list of list of nodes
 (define (addAll addon lst)
   (map (lambda (x) (cons addon x)) lst))
+
 ;;dfs
 (define (mydfs graph start used)
   (if (is-goal? start) (list (list start))
@@ -54,20 +58,19 @@
          (reverse lst)] ;;(use reverse because cons puts element to the front, causing the result to reversed order)
         [(empty? queue) ;; if queue is empty (and start not null) --> init-state, put start into queue
          (mybfs (list (list start)) graph null lst)]
-        [(is-goal? (first (first queue))) (mybfs (rest queue) graph start (cons (reverse (first queue)) lst))]
-        [else (mybfs (append (rest queue)
+        [(is-goal? (first (first queue))) ;; if a goal reached
+         (mybfs (rest queue) graph start (cons (reverse (first queue)) lst))];; add the path into lst, continue in the queue
+        [else (mybfs (append (rest queue) ;; go one step further on the path and enqueue them
                              (bfs-helper graph '() (first queue) (get-neighbors graph (first (first queue))))) graph null lst)
                       ]))
+
 (define (bfs-helper graph paths path nbrs)
   (cond [(empty? nbrs) paths]
-        [(member? (first nbrs) path) (bfs-helper graph paths path (rest nbrs))]
+        [(member? (first nbrs) path) (bfs-helper graph paths path (rest nbrs))];; there is a loop in the path if add the nbr
         [else (bfs-helper graph (cons (cons (first nbrs) path) paths) path (rest nbrs))]))
 
 
 ;;lowest-cost
-(define (acc lst result)
-  (if (= 1 (length lst)) result
-      (acc (rest lst) (+ result (edge-weight g (first lst) (second lst))))))
 
 (define (my-lowest-cost queue graph start lst)
   (cond [(and (empty? queue) ;; if queue is empty and start is null(not the init-state), return result      
@@ -81,10 +84,19 @@
                                     compare) graph null lst)
               
                       ]))
-
+;; comparator for sorting by cost
 (define compare
   (lambda (x y) (< (acc x 0) (acc y 0))))
-;;best-first heuristics: manhattan distance
+;; accumulate cost along path
+;; lst: path (list of node)
+;; result: Int  so-far cost
+;; return: Int  total cost
+(define (acc lst result)
+  (if (= 1 (length lst)) result
+      (acc (rest lst) (+ result (edge-weight g (first lst) (second lst))))))
+
+;; best-first (heuristics: manhattan distance)
+;; based on bfs, everytime when choosing the next neighbor to be added into the path, sort them first according to their manhattan distance
 (define (my-best-first queue graph start lst)
   (cond [(and (empty? queue) ;; if queue is empty and start is null(not the init-state), return result      
               (null? start)) 
@@ -97,7 +109,8 @@
                              ;;sort neighbor according to acsending order of manhattan distance
                                      graph null lst)
                       ]))
-(define (pos node)
+
+(define (pos node) ;; positions for each spot
   (cond [(eq? 'r123 node) (list 0 4)]
         [(eq? 'o125 node) (list 1 3)]
         [(eq? 'o123 node) (list 1 4)]
@@ -122,16 +135,19 @@
         [(eq? 'o103 node) (list 5 4)]
         [(eq? 'o109 node) (list 5 7)]
         [(eq? 'o111 node) (list 5 8)]))
-(define (manhattan-distance a b)
+
+(define (manhattan-distance a b) ;; manhattan distance from a to b
   (+ (abs (- (first (pos a)) (first (pos b))))
      (abs (- (first (pos a)) (first (pos b))))))
-(define (heuristic a goals)
+
+(define (heuristic a goals) ;; heuristics: minimum manhattan distance to any goal
   (if (empty? goals) +inf.0
       (min (manhattan-distance a (first goals))
            (heuristic a (rest goals)))))
+;; comparator: compare two nodes' heuristic value
 (define compare-h
-  (lambda (a b) (< (heuristic a) (heuristic b))))
-(define (graph-search g
+  (lambda (a b) (< (heuristic a goals) (heuristic b goals))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;MAIN;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 "using dfs"
 (mydfs g 'o103 '())
 "using bfs"
@@ -141,4 +157,3 @@
 "using best-first"
 (my-best-first '() g 'o103 '())
 
-;; (list-ref (first queue) (- (length (first queue)) 1))
