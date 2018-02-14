@@ -3,6 +3,7 @@
 #reader(lib "htdp-intermediate-lambda-reader.ss" "lang")((modname assign1) (read-case-sensitive #t) (teachpacks ()) (htdp-settings #(#t constructor repeating-decimal #f #t none #f () #f)))
 
 (require graph)
+(require racket/dict)
 (define g (weighted-graph/directed '((6 ts mail)
                                      (6 mail ts)
                                      (8 o103 ts) (8 ts o103)
@@ -26,36 +27,118 @@
                                      (4 o123 r123) (4 r123 o123)
                                      (9 o119 o123) (9 o123 o119)
                                      (7 o119 storage) (7 storage o119))))
-
-(define (mydfs graph start used)
-  (dfs-helper '() graph start used))
-
-(define (dfs-helper all-solutions graph start used)
-  (if (is-goal? start) (cons (list start) all-solutions)
-      (addAll start (helper all-solutions graph (cons start used) (get-neighbors graph start)))
-        ))
-
-(define (helper all-solutions graph used nbrs)
-  (cond [(empty? nbrs) all-solutions]
-        [(member? (first nbrs) used) (helper all-solutions graph used (rest nbrs))]
-        [else (append (helper all-solutions graph used (rest nbrs)) (mydfs graph (first nbrs) used))]))
-         ;; start
-(define (addAll addon lst)
-  (map (lambda (x) (cons addon x)) lst))
 (define (is-goal? v)
   (or (equal? v 'r123)
       (equal? v 'storage)
       (equal? v 'd1)))
+(define goals (list 'r123 'storage 'd1))
+  
+(define (addAll addon lst)
+  (map (lambda (x) (cons addon x)) lst))
+;;dfs
+(define (mydfs graph start used)
+  (if (is-goal? start) (list (list start))
+      (addAll start (dfs-helper2 '() graph (cons start used) (get-neighbors graph start)))
+        ))
+
+(define (dfs-helper2 all-solutions graph used nbrs)
+  (cond [(empty? nbrs) all-solutions]
+        [(member? (first nbrs) used) (dfs-helper2 all-solutions graph used (rest nbrs))]
+        [else (append (dfs-helper2 all-solutions graph used (rest nbrs)) (mydfs graph (first nbrs) used))]))
+         ;; start
+
+;;bfs
+(define (mybfs queue graph start lst)
+  (cond [(and (empty? queue) ;; if queue is empty and start is null(not the init-state), return result      
+              (null? start)) 
+         (reverse lst)] ;;(use reverse because cons puts element to the front, causing the result to reversed order)
+        [(empty? queue) ;; if queue is empty (and start not null) --> init-state, put start into queue
+         (mybfs (list (list start)) graph null lst)]
+        [(is-goal? (first (first queue))) (mybfs (rest queue) graph start (cons (reverse (first queue)) lst))]
+        [else (mybfs (append (rest queue)
+                             (bfs-helper graph '() (first queue) (get-neighbors graph (first (first queue))))) graph null lst)
+                      ]))
+(define (bfs-helper graph paths path nbrs)
+  (cond [(empty? nbrs) paths]
+        [(member? (first nbrs) path) (bfs-helper graph paths path (rest nbrs))]
+        [else (bfs-helper graph (cons (cons (first nbrs) path) paths) path (rest nbrs))]))
 
 
+;;lowest-cost
 (define (acc lst result)
   (if (= 1 (length lst)) result
       (acc (rest lst) (+ result (edge-weight g (first lst) (second lst))))))
 
-(define (my-best-first graph start used)
-  (sort (mydfs graph start used) (lambda (x y) (< (acc x 0) (acc y 0)))))
+(define (my-lowest-cost queue graph start lst)
+  (cond [(and (empty? queue) ;; if queue is empty and start is null(not the init-state), return result      
+              (null? start)) 
+         (sort (reverse lst) compare)] ;;(use reverse because cons puts element to the front, causing the result to reversed order)
+        [(empty? queue) ;; if queue is empty (and start not null) --> init-state, put start into queue
+         (my-lowest-cost (list (list start)) graph null lst)]
+        [(is-goal? (first (first queue))) (my-lowest-cost (rest queue) graph start (cons (reverse (first queue)) lst))]
+        [else (my-lowest-cost (sort ;; sort queue according to acsending order of cost sofar
+                               (append (rest queue) (bfs-helper graph '() (first queue) (get-neighbors graph (first (first queue)))))
+                                    compare) graph null lst)
+              
+                      ]))
+
+(define compare
+  (lambda (x y) (< (acc x 0) (acc y 0))))
+;;best-first heuristics: manhattan distance
+(define (my-best-first queue graph start lst)
+  (cond [(and (empty? queue) ;; if queue is empty and start is null(not the init-state), return result      
+              (null? start)) 
+         (sort (reverse lst) compare)] ;;(use reverse because cons puts element to the front, causing the result to reversed order)
+        [(empty? queue) ;; if queue is empty (and start not null) --> init-state, put start into queue
+         (my-best-first (list (list start)) graph null lst)]
+        [(is-goal? (first (first queue))) (my-best-first (rest queue) graph start (cons (reverse (first queue)) lst))]
+        [else (my-best-first (append (rest queue) (bfs-helper graph '() (first queue)
+                                                              (sort (get-neighbors graph (first (first queue))) compare-h)))
+                             ;;sort neighbor according to acsending order of manhattan distance
+                                     graph null lst)
+                      ]))
+(define (pos node)
+  (cond [(eq? 'r123 node) (list 0 4)]
+        [(eq? 'o125 node) (list 1 3)]
+        [(eq? 'o123 node) (list 1 4)]
+        [(eq? 'o119 node) (list 1 6)]
+        [(eq? 'storage node) (list 1 7)]
+        [(eq? 'o125 node) (list 1 3)]
+        [(eq? 'd1 node) (list 2 1)]
+        [(eq? 'd2 node) (list 2 3)]
+        [(eq? 'c1 node) (list 2 4)]
+        [(eq? 'd3 node) (list 3 3)]
+        [(eq? 'c2 node) (list 3 4)]
+        [(eq? 'c3 node) (list 3 5)]
+        [(eq? 'a1 node) (list 3 3)]
+        [(eq? 'b1 node) (list 3 4)]
+        [(eq? 'b2 node) (list 3 5)]
+        [(eq? 'a2 node) (list 4 1)]
+        [(eq? 'a3 node) (list 4 3)]
+        [(eq? 'b3 node) (list 4 4)]
+        [(eq? 'b4 node) (list 4 5)]
+        [(eq? 'mail node) (list 5 0)]
+        [(eq? 'ts node) (list 5 1)]
+        [(eq? 'o103 node) (list 5 4)]
+        [(eq? 'o109 node) (list 5 7)]
+        [(eq? 'o111 node) (list 5 8)]))
+(define (manhattan-distance a b)
+  (+ (abs (- (first (pos a)) (first (pos b))))
+     (abs (- (first (pos a)) (first (pos b))))))
+(define (heuristic a goals)
+  (if (empty? goals) +inf.0
+      (min (manhattan-distance a (first goals))
+           (heuristic a (rest goals)))))
+(define compare-h
+  (lambda (a b) (< (heuristic a) (heuristic b))))
+(define (graph-search g
 "using dfs"
 (mydfs g 'o103 '())
-
+"using bfs"
+(mybfs '() g 'o103 '())
+"using lowest-cost"
+(my-lowest-cost '() g 'o103 '())
 "using best-first"
-(my-best-first g 'o103 '())
+(my-best-first '() g 'o103 '())
+
+;; (list-ref (first queue) (- (length (first queue)) 1))
