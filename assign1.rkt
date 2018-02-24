@@ -41,14 +41,14 @@
 
 ;;dfs
 (define (mydfs graph start used)
-  (if (is-goal? start) (list (list start))
-      (addAll start (dfs-helper2 '() graph (cons start used) (get-neighbors graph start)))
+  (if (member? start goals) (list (list start))
+      (addAll start (dfs-helper1 '() graph (cons start used) (get-neighbors graph start)))
         ))
 
-(define (dfs-helper2 all-solutions graph used nbrs)
+(define (dfs-helper1 all-solutions graph used nbrs)
   (cond [(empty? nbrs) all-solutions]
-        [(member? (first nbrs) used) (dfs-helper2 all-solutions graph used (rest nbrs))]
-        [else (append (dfs-helper2 all-solutions graph used (rest nbrs)) (mydfs graph (first nbrs) used))]))
+        [(member? (first nbrs) used) (dfs-helper1 all-solutions graph used (rest nbrs))]
+        [else (append (dfs-helper1 all-solutions graph used (rest nbrs)) (mydfs graph (first nbrs) used))]))
          ;; start
 
 ;;bfs
@@ -96,6 +96,7 @@
       (acc (rest lst) (+ result (edge-weight g (first lst) (second lst))))))
 
 ;; best-first (heuristics: manhattan distance)
+;; the straight-line distance between the node and its closest goal can be used as the heuristic function
 ;; based on bfs, everytime when choosing the next neighbor to be added into the path, sort them first according to their manhattan distance
 (define (my-best-first queue graph start lst)
   (cond [(and (empty? queue) ;; if queue is empty and start is null(not the init-state), return result      
@@ -147,6 +148,101 @@
 ;; comparator: compare two nodes' heuristic value
 (define compare-h
   (lambda (a b) (< (heuristic a goals) (heuristic b goals))))
+;; dls: deapth-limited-search
+
+(define (mydls graph start limit used)
+  (cond [(>= 0 limit) (list)]
+        [(is-goal? start) (list (list start))]
+        [else (addAll start (dfs-helper2 '() graph  (get-neighbors graph start) limit (cons start used)))]))
+
+(define (dfs-helper2 all-solutions graph nbrs limit used)
+  (cond [(empty? nbrs) all-solutions]
+        [(member? (first nbrs) used) (dfs-helper2 all-solutions graph (rest nbrs) limit used)]
+        [else (append (dfs-helper2 all-solutions graph (rest nbrs) limit used) (mydls graph (first nbrs) (- limit 1) used))]))
+         ;; start
+(define (my-astar queue graph start lst)
+  (cond [(and (empty? queue) ;; if queue is empty and start is null(not the init-state), return result      
+              (null? start)) 
+         (sort (reverse lst) compare)] ;;(use reverse because cons puts element to the front, causing the result to reversed order)
+        [(empty? queue) ;; if queue is empty (and start not null) --> init-state, put start into queue
+         (my-astar (list (list start)) graph null lst)]
+        [(is-goal? (first (first queue))) (my-astar (rest queue) graph start (cons (reverse (first queue)) lst))]
+        [else (my-astar (append (rest queue) (bfs-helper graph '() (first queue)
+                                                              (sort (get-neighbors graph (first (first queue)))
+                                                                    (compare-astar graph (first (first queue))))))
+                             ;;sort neighbor according to acsending order of manhattan distance
+                                     graph null lst)
+                      ]))
+(define (compare-astar graph prev)
+  (lambda (a b) (< (+ (edge-weight graph prev a) (heuristic a goals))
+                   (+ (edge-weight graph prev b) (heuristic b goals)))))
+(define-struct pair (prev cur))
+;;PART3:
+;;my bidirection bfs
+(define (mybi-bfs graph start goal)
+  (mybi-bfs-helper start goal (list start) (list goal) graph '((list null start) (list null goal))))
+;; helper:
+;; INPUT:
+;;  start: start point;
+;;  goal: goal point
+;;  startset: the set of nodes represents the frontier from start
+;;  goalset the set of nodes represents the frontier from goal
+;;  used: set of pairs of nodes visited before (prev, cur)
+;; Return: only one path (the shortest one)
+(define (mybi-bfs-helper start goal startset goalset graph used)
+  (let ((node (interact startset goalset))
+        (nextstart (nextfrontier startset (list (list) (list)) used graph))
+        ;; nextstart: (list (frontier) (used)) consists of two parts:
+        ;;       first part, frontier of the next step;
+        ;;       second part: used pairs between current frontier and next frontier
+        )
+  (cond [(or (= 0 (length startset))
+            (= 0 (length goalset)))
+            '()]
+        [(< (length startset)
+            (length goalset));; always expand the larger one (if startset < goalset, swap those two)
+            (mybi-bfs-helper goal start goalset startset graph used)]
+        [(null? node);; if no intersaction, continue to expand
+         (mybi-bfs-helper start goal (first nextstart) goalset
+                                       graph (append (second nextstart) used))]
+        [else (append  (reconstruct used node start '())
+                       (rest (reverse (reconstruct used node goal '())))
+                       )])))
+;;
+(define (nextfrontier frontier next used graph)
+  (if (empty? frontier) next
+      (let ((cur (first frontier))
+            (nbrs (get-neighbors graph (first frontier)))
+            (emptylst (list (list) (list))))
+          (nextfrontier (rest frontier)
+                    (list (append (first next) (first (getnext nbrs emptylst used cur)))
+                          (append (second next) (second (getnext nbrs emptylst used cur))))
+                    (append used (second (getnext nbrs emptylst used cur))) graph))))
+
+(define (getnext nbrs lst used cur)
+  (let ((newfrontier (first lst))
+        (newused (second lst)))
+  (cond [(empty? nbrs) lst]
+        [(null? (find-prev (first nbrs) used))
+         (getnext (rest nbrs) (list (cons (first nbrs) newfrontier) (cons (list cur (first nbrs)) newused)) used cur)]
+        [else (getnext (rest nbrs) lst used cur)])))
+;; find the previous node in path
+;; node: the current node
+;; used: set of pairs of nodes visited before (prev, cur)
+(define (find-prev node used)
+  (cond [(empty? used) null]
+        [(equal? node (second (first used))) (first (first used))]
+        [else (find-prev node (rest used))]))
+;; look for interaction of two frontiers
+;; return: either null if no interaction or the node in both sets
+(define (interact startset goalset)
+  (cond [(empty? goalset) null]
+        [(member? (first goalset) startset) (first goalset)]
+        [else (interact startset (rest goalset))]))
+;; reconstruct path towards two endpoints
+(define (reconstruct used node goal path)
+  (if (equal? node goal) (cons goal path)
+      (reconstruct used (find-prev node used) goal (cons node path))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;MAIN;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 "using dfs"
 (mydfs g 'o103 '())
@@ -156,4 +252,9 @@
 (my-lowest-cost '() g 'o103 '())
 "using best-first"
 (my-best-first '() g 'o103 '())
-
+"using dls"
+(mydls g 'o103 12 '())
+"using a*"
+(my-astar '() g 'o103 '())
+"using bidirectional search"
+(mybi-bfs g 'r123 'o123)
